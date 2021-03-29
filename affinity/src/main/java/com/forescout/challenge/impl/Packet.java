@@ -78,6 +78,7 @@ public class Packet implements IPacket, Serializable {
 
 		rules = discardMismatchRules(rules);
 		
+		//If no rule matches with the given attribute across all rules, return null
 		return rules.isEmpty()?null:processRoutingRules(rules, attributesPriority);
 	}
 
@@ -99,35 +100,13 @@ public class Packet implements IPacket, Serializable {
 
 		Map<IRoutingRule, Long> scoreMap = getAttributeRulesScore(attributeKey, rules);
 
-		//No rule matches with the given attribute across all rules, return null
-		//scoreMap = scoreMap.entrySet().stream().filter(entry -> entry.getValue() > 0L).collect(Collectors.toMap(routingRule -> routingRule.getKey(), score -> score.getValue()));
-		
-		//if (scoreMap.isEmpty())
-			//return null;
-
 		if (attributeIterator.hasNext()) {
-			//Discard the rules that does not match the attribute
-			//and move to the next attribute rule matching across all attributes
-			rules = scoreMap.entrySet().stream()
-					.filter(entry->entry.getValue()>0L)
-					.map(Map.Entry::getKey)
-					.collect(Collectors.toSet());
-
 			//Also remove the current attributeKey as its already done 
 			LinkedHashSet<AttributeKey> updateAttributesPriority = new LinkedHashSet<>();
 			attributeIterator.forEachRemaining(item->updateAttributesPriority.add(item));
 			rule = processRoutingRules(rules,updateAttributesPriority);			
 		} else {
-
-			//Only if 1 element exists
-			if (scoreMap.entrySet().stream().count()==1L)
-				rule = scoreMap.keySet().stream().findFirst().get();
-
-			//if more than one rule satisfies all the attributes
-			//return the rule that has least id i.e which is created first
-			if (scoreMap.values().stream().filter(value->value>=1L).count()>1L)	{
-				rule = rules.stream().min((rule1,rule2)->((Integer)rule1.getId()).compareTo((Integer)(rule2.getId()))).get();
-			}
+				rule = scoreMap.keySet().stream().min((rule1,rule2)->((Integer)rule1.getId()).compareTo((Integer)(rule2.getId()))).get();
 		}
 		return rule;
 		
