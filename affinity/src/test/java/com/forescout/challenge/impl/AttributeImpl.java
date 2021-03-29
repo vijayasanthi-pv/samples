@@ -8,6 +8,9 @@ import com.forescout.challenge.affinity.attributes.Attribute;
 import com.forescout.challenge.affinity.attributes.AttributeOperator;
 import com.forescout.challenge.affinity.attributes.values.PortRange;
 
+/**
+ * Implementation for Attribute class
+ */
 public class AttributeImpl<T extends Object> extends Attribute<T>{
 
 	protected AttributeImpl(T argument, AttributeOperator operator) {
@@ -18,6 +21,12 @@ public class AttributeImpl<T extends Object> extends Attribute<T>{
 		super(argument);
 	}
 
+	/**
+     * Computes the matching score of a field in IPacket and the given argument using the equals operator
+     * @param packet The packet that given item is matched against
+     * @param argument The argument to match
+     * @return The item matching score
+     */
 	@Override
 	public long equalsMatchingScore(IPacket packet, T argument) {
 		
@@ -41,6 +50,10 @@ public class AttributeImpl<T extends Object> extends Attribute<T>{
 		return 0;
 	}
 
+	/**
+     * Used as tracker for current AttributeKey
+     * @return The current AttributeKey used
+     */
 	@Override
 	public AttributeKey getAttributeInstanceId() {
 		return RoutingRule.currentAttributeKey;
