@@ -76,9 +76,9 @@ public class Packet implements IPacket, Serializable {
 		if (attributesPriority.isEmpty() || rules.isEmpty())
 			throw new AssertionError("Priority or Rules is empty");
 
-		IRoutingRule rule = processRoutingRules(rules, attributesPriority);
-
-		return rule;
+		rules = discardMismatchRules(rules);
+		
+		return rules.isEmpty()?null:processRoutingRules(rules, attributesPriority);
 	}
 
 
@@ -100,10 +100,10 @@ public class Packet implements IPacket, Serializable {
 		Map<IRoutingRule, Long> scoreMap = getAttributeRulesScore(attributeKey, rules);
 
 		//No rule matches with the given attribute across all rules, return null
-		scoreMap = scoreMap.entrySet().stream().filter(entry -> entry.getValue() > 0L).collect(Collectors.toMap(routingRule -> routingRule.getKey(), score -> score.getValue()));
+		//scoreMap = scoreMap.entrySet().stream().filter(entry -> entry.getValue() > 0L).collect(Collectors.toMap(routingRule -> routingRule.getKey(), score -> score.getValue()));
 		
-		if (scoreMap.isEmpty())
-			return null;
+		//if (scoreMap.isEmpty())
+			//return null;
 
 		if (attributeIterator.hasNext()) {
 			//Discard the rules that does not match the attribute
