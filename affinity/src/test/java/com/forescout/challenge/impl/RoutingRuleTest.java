@@ -11,33 +11,6 @@ import org.junit.Test;
 public class RoutingRuleTest {
 
 
-	@Test
-    public void testSample() {
-		IPacket packet;
-        IRoutingRule alikeRule;
-
-//        IRoutingRule routingRule3 = Factory.createRoutingRule3();//10.2.1.0/31
-//        IRoutingRule routingRule4 = Factory.createRoutingRule4();//10.2.1.1/32
-        
-        IRoutingRule routingRule = Factory.createRoutingRule2();
-//        "192.168.0.0/16", // Wider than the subnet in srcAddresses1
-//        "10.1.1.0/24",    // Narrower than the subnet in srcAddresses1
-//        "172.0.0.0/8",    // Same than the subnet in srcAddresses1
-//        "8.8.8.8/32"      
-        IRoutingRule routingRule2 = Factory.createRoutingRule1();
-//        "192.168.1.0/24",
-//        "10.1.0.0/16",
-//        "172.0.0.0/8",
-//        "8.8.8.8/32"
-        Collection<IRoutingRule> rules = Arrays.asList(routingRule,routingRule2);
-        
-
-        packet = Factory.createPacket("172.0.0.0", "10.2.1.1", 21, "UDP");
-        alikeRule = packet.getClosestAffinityNetwork(rules, routingRule2.getDefaultAttributesPriority());
-        Assert.assertEquals(routingRule2, alikeRule);
-        //Assert.assertNull(alikeRule);
-    }
-	
     @Test
     public void testRoutingSingleRule() {
 
@@ -291,5 +264,4 @@ public class RoutingRuleTest {
         alikeRule = packet.getClosestAffinityNetwork(rules, routingRule1.getDefaultAttributesPriority());
         Assert.assertNull("Protocol must not match", alikeRule);
     }
-    
 }

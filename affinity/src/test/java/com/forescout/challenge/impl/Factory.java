@@ -35,8 +35,7 @@ public class Factory {
     }
 
     public static String createDstAddress2() {
-    	return "10.2.1.1/32";
-        //return "10.2.1.0/31"; // Wider than the subnet in dstAddress1
+        return "10.2.1.0/31"; // Wider than the subnet in dstAddress1
     }
 
     public static PortRange createPortRange1() {

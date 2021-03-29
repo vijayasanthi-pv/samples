@@ -2,25 +2,32 @@ package com.forescout.challenge.impl;
 
 import java.io.Serializable;
 import java.util.Collection;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.forescout.challenge.affinity.IPacket;
 import com.forescout.challenge.affinity.IRoutingRule;
 import com.forescout.challenge.affinity.IRoutingRule.AttributeKey;
-import com.forescout.challenge.affinity.Utility;
-import com.forescout.challenge.affinity.attributes.values.Pair;
 
+/**
+ * Represents a packet routed from a source network to a destination network
+ */
 public class Packet implements IPacket, Serializable {
-	
+
 	private static final long serialVersionUID = -2226687685731525241L;
+
+	/**
+	 * Attributes of a packet
+	 */
 	
 	private Long dstAddr;
 	private Long srcAddr;
 	private Integer dstPort;
 	private String protocol;
-	
+
 	public Packet(long srcAddr, long dstAddr, int dstPort, String protocol) {
 		this.srcAddr = srcAddr;
 		this.dstAddr = dstAddr;
@@ -48,91 +55,104 @@ public class Packet implements IPacket, Serializable {
 		return this.protocol;
 	}
 
+	/**
+     * Returns the {@link RoutingRule} with the highest matching score. The
+     * destination network address can be obtained from the dstAddress property
+     * in the rule.
+     * @param rules The pool of rules where the matching score is computed on
+     * @param attributesPriority A ordered set of attributes representing the
+     * priority order in which attributes are evaluated
+     * @return
+     */
 	@Override
 	public IRoutingRule getClosestAffinityNetwork(Collection<IRoutingRule> rules,
 			LinkedHashSet<AttributeKey> attributesPriority) {
-		
+
 		if (rules==null || attributesPriority==null)
 			throw new IllegalArgumentException();
-		
+
 		Iterator<AttributeKey> attributeIterator = attributesPriority.iterator();
 		Iterator<IRoutingRule> rulesIterator = rules.iterator();
-		
+
 		if (!attributeIterator.hasNext() || !rulesIterator.hasNext())
 			throw new AssertionError("Collection is empty");
-		
+
+		IRoutingRule rule = processRoutingRules(rules, attributesPriority);
+
+		return rule;
+	}
+
+
+	/**
+     * Returns the {@link RoutingRule} with the highest matching score.
+     * @param rules The pool of rules where the matching score is computed on
+     * @param attributesPriority A ordered set of attributes representing the
+     * priority order in which attributes are evaluated
+     * @return
+     */
+	private IRoutingRule processRoutingRules(Collection<IRoutingRule> rules,
+			LinkedHashSet<AttributeKey> attributesPriority) {
+
+		Iterator<AttributeKey> attributeIterator = attributesPriority.iterator();
 		AttributeKey attributeKey = attributeIterator.next();
-		
-		return getClosestNetwork(attributeKey,attributesPriority, rules);
-			
-	}
 
-	private Collection<IRoutingRule> getClosestNetwork(AttributeKey attributeKey, Collection<IRoutingRule> rules) {
-		return Collections.emptySet();
-	}
-	
-	private IRoutingRule getClosestNetwork(AttributeKey attributeKey, LinkedHashSet<AttributeKey> attributesPriority, Collection<IRoutingRule> rules) {
-		
-		System.out.println("attributeKey :: "+attributeKey);
-		System.out.println("attributesPriority :: "+attributesPriority);
-		Iterator<IRoutingRule> rulesIterator = rules.iterator();
+		IRoutingRule rule = null;
 
-		IRoutingRule iRoutingRule = rulesIterator.next();
-		Long maxScore = iRoutingRule.getMatchingScore(attributeKey, this);
-		
-		if (maxScore==0 && !rulesIterator.hasNext())
+		Map<IRoutingRule, Long> scoreMap = getAttributeRulesScore(attributeKey, rules);
+
+		//No rule matches with the given attribute across all rules, return null
+		if (scoreMap.values().stream().filter(value->value==0L).count()==rules.size())
 			return null;
-		while(rulesIterator.hasNext()) {
-			
-			IRoutingRule rule = rulesIterator.next();
-			
-			long itemScore = rule.getMatchingScore(attributeKey, this);
-			
-			if (itemScore == maxScore) {
-				if (itemScore == 0) {
-					iRoutingRule = null;
-				}else {
-					
-					Pair<Long, Integer> rulePair;
-					Pair<Long, Integer> iRulePair;
-					
-					if (attributeKey.equals(IRoutingRule.AttributeKey.dstAddress)) {
-						
-						rulePair = Utility.cidrStringToNetAndMask((String)rule.getDstAddress().getArgument());
-						iRulePair = Utility.cidrStringToNetAndMask((String)iRoutingRule.getDstAddress().getArgument());
-						
-						if (rulePair.getFirst() > iRulePair.getFirst()) {
-							iRoutingRule = rule;
-						}else if (rulePair.getFirst() == iRulePair.getFirst()) { //First is subnet
-							if (rulePair.getSecond() > iRulePair.getSecond()) {
-								iRoutingRule = rule;
-							}else if (rulePair.getSecond() == iRulePair.getSecond()) { //Second is mask
-								attributesPriority.remove(attributeKey);
-								Iterator<AttributeKey> attributeIterator = attributesPriority.iterator();
-								iRoutingRule = attributeIterator.hasNext()?getClosestNetwork(attributeIterator.next(),attributesPriority,rules)
-										: rule.getId()<iRoutingRule.getId()?rule:iRoutingRule;
-								//iRoutingRule = rule.getId()<iRoutingRule.getId()?rule:iRoutingRule;
-							}
-						}
-					}		
-					else {
-						attributesPriority.remove(attributeKey);
-						Iterator<AttributeKey> attributeIterator = attributesPriority.iterator();
-						iRoutingRule = attributeIterator.hasNext()?getClosestNetwork(attributeIterator.next(),attributesPriority,rules)
-								: rule.getId()<iRoutingRule.getId()?rule:iRoutingRule;
-						//iRoutingRule = rule.getId()<iRoutingRule.getId()?rule:iRoutingRule;
-					}
-				}
-            } else if (itemScore > maxScore) {
-                maxScore = itemScore;
-                iRoutingRule = rule;
-            } else {
-            	System.out.println("GGGGGGGGGGGGGG");
-            }
-		}
-		
-		return iRoutingRule;
 
+		if (attributeIterator.hasNext()) {
+			//Discard the rules that does not match the attribute
+			//and move to the next attribute rule matching across all attributes
+			rules = scoreMap.entrySet().stream()
+					.filter(entry->entry.getValue()>0L)
+					.map(Map.Entry::getKey)
+					.collect(Collectors.toSet());
+
+			//Also remove the current attributeKey as its already done 
+			LinkedHashSet<AttributeKey> updateAttributesPriority = new LinkedHashSet<>();
+			attributeIterator.forEachRemaining(item->updateAttributesPriority.add(item));
+			rule = processRoutingRules(rules,updateAttributesPriority);			
+		} else {
+
+			//Only if 1 element exists
+			if (scoreMap.entrySet().stream().count()==1L)
+				rule = scoreMap.keySet().stream().findFirst().get();
+
+			//if more than one rule satisfies all the attributes
+			//return the rule that has least id i.e which is created first
+			if (scoreMap.values().stream().filter(value->value>=1L).count()>1L)	{
+				rule = rules.stream().min((rule1,rule2)->((Integer)rule1.getId()).compareTo((Integer)(rule2.getId()))).get();
+			}
+		}
+		return rule;
+		
+		//NOTE: This method is in enhancement for the comparing attributes across multiple rules
 	}
 
+	/**
+     * Returns the {@Map <RoutingRule,Long} routing rules with their scores for a 
+     * given attribute
+     * @param rules The pool of rules where the matching score is computed on
+     * @param attributesKey against which the routing rules are scored
+     * @return
+     */
+	private Map<IRoutingRule,Long> getAttributeRulesScore(AttributeKey attributeKey, Collection<IRoutingRule> rules) {
+
+
+		Map<IRoutingRule,Long> scoreMap = new HashMap<>();
+
+		Iterator<IRoutingRule> rulesIterator = rules.iterator();
+		IRoutingRule rule;
+
+		while(rulesIterator.hasNext()) {
+			rule = rulesIterator.next();
+			scoreMap.put(rule, rule.getMatchingScore(attributeKey, this));
+		}
+
+		return scoreMap;
+	}
 }
