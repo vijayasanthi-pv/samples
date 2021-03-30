@@ -1,6 +1,7 @@
 package com.forescout.challenge.impl;
 
 import static com.forescout.challenge.affinity.Utility.cidrStringToNetAndMask;
+import static java.util.stream.Collectors.toMap;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -29,24 +30,44 @@ public class PacketHelper {
 	 */
 	public static Map<IRoutingRule, Long> getSrcAddressCloseAffinity(IPacket packet, Collection<IRoutingRule> rules) {
 
-		Map<IRoutingRule, Object> srcAddressMap = rules.stream().collect(Collectors.toMap(Function.identity(),
-				routingRule -> ((Collection<Attribute<String>>) routingRule.getSrcAddresses().getArgument()).stream().filter(srcAddress->Utility.isIpInsideNet(packet.getSrcAddr(), srcAddress.getArgument())).findFirst().get()));
-
-		srcAddressMap.entrySet().stream().forEach(entry -> {
-			Collection<String> srcAddresses = (Set<String>)entry.getKey().getSrcAddresses().getArgument();
-			srcAddresses.clear();
-			srcAddresses.add(entry.getValue().toString());
-		});
-		return getIPAddressCloseAffinity(srcAddressMap.keySet(), IRoutingRule.AttributeKey.srcAddresses);
+		Map<IRoutingRule, String> srcAddressMap = rules.stream().collect(toMap(Function.identity(),
+				routingRule -> ((Collection<Attribute<String>>) routingRule.getSrcAddresses().getArgument()).stream().filter(srcAddress->Utility.isIpInsideNet(packet.getSrcAddr(), srcAddress.getArgument())).findFirst().get().getArgument()));
+		return getIPAddressCloseAffinity(srcAddressMap);
 
 	}
 
-		/**
-         * Returns the {@RoutingRule} that has closest affinity for the IP attribute
-         * @param rules The pool of rules where the affinity is computed on
-         * @return
-         */
-	public static Map<IRoutingRule, Long> getIPAddressCloseAffinity(Collection<IRoutingRule> rules, IRoutingRule.AttributeKey attributeKey){
+	public static Map<IRoutingRule, Long> getIPAddressCloseAffinity(Map<IRoutingRule, String> rules) {
+
+		Map<IRoutingRule, Pair<Long, Integer>> iRoutingRulePairMap = rules.entrySet().stream().collect(toMap(Map.Entry::getKey, entry -> cidrStringToNetAndMask(entry.getValue())));
+		Optional<Map.Entry<IRoutingRule, Pair<Long, Integer>>> maxRuleEntryPair = iRoutingRulePairMap.entrySet().stream().max(Comparator.comparing(entry -> entry.getValue().getFirst()));
+		if (maxRuleEntryPair.isPresent()) {
+			Long ruleIP = maxRuleEntryPair.get().getValue().getFirst();
+			Map<IRoutingRule, Pair<Long, Integer>> rulesSubnet = iRoutingRulePairMap.entrySet().stream().filter(entry -> ruleIP.equals(entry.getValue().getFirst())).collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
+			if (rulesSubnet.size() == 1) {
+				return Collections.singletonMap(rulesSubnet.keySet().stream().findFirst().get(), ruleIP);
+			} else {
+				Optional<Map.Entry<IRoutingRule, Pair<Long, Integer>>> minRuleEntryPair = rulesSubnet.entrySet().stream().min(Comparator.comparing(entry -> entry.getValue().getSecond()));
+				if(minRuleEntryPair.isPresent()) {
+					Pair<Long, Integer> minMaskPair = minRuleEntryPair.get().getValue();
+					Map<IRoutingRule, Pair<Long, Integer>> rulesWithMask = rulesSubnet.entrySet().stream().filter(entry -> minMaskPair.getSecond().equals(entry.getValue().getSecond())).collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
+					if(rulesWithMask.size() == 1) {
+						return Collections.singletonMap(rulesWithMask.entrySet().stream().findFirst().get().getKey(), minMaskPair.getFirst());
+					} else {
+						IRoutingRule iRoutingRule = rulesWithMask.entrySet().stream().min(Comparator.comparing(entry -> (entry.getKey().getId()))).get().getKey();
+						return Collections.singletonMap(iRoutingRule, minMaskPair.getFirst());
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Returns the {@RoutingRule} that has closest affinity for the IP attribute
+	 * @param rules The pool of rules where the affinity is computed on
+	 * @return
+	 */
+	public static Map<IRoutingRule, Long> getIPAddressCloseAffinity(Collection<IRoutingRule> rules, IRoutingRule.AttributeKey attributeKey) {
 
 		//across all the rules
 		Optional<IRoutingRule> optionalRule = rules.stream().max(Comparator.comparing(rule -> cidrStringToNetAndMask(getAttributeValue(rule, attributeKey)).getFirst()));
@@ -84,7 +105,7 @@ public class PacketHelper {
 		if(attributeKey == IRoutingRule.AttributeKey.dstAddress) {
 			return (String) rule.getDstAddress().getArgument();
 		} else if (attributeKey == IRoutingRule.AttributeKey.srcAddresses) {
-			return Utility.ip2String(Long.parseLong((((Collection<String>)rule.getSrcAddresses()).stream().findFirst().get())));
+			return ((Collection<String>)rule.getSrcAddresses().getArgument()).stream().findFirst().get();
 		}
 
 		return null;

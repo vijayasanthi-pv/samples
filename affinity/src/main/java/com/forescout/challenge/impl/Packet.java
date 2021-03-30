@@ -1,20 +1,26 @@
 package com.forescout.challenge.impl;
 
-import java.io.Serializable;
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.Set;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-
 import com.forescout.challenge.affinity.IPacket;
 import com.forescout.challenge.affinity.IRoutingRule;
 import com.forescout.challenge.affinity.IRoutingRule.AttributeKey;
 import com.forescout.challenge.affinity.Utility;
 import com.forescout.challenge.affinity.attributes.Attribute;
+import com.forescout.challenge.affinity.attributes.values.Pair;
+
+import java.io.Serializable;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import static com.forescout.challenge.affinity.Utility.cidrStringToNetAndMask;
+import static java.util.stream.Collectors.toMap;
 
 /**
  * Represents a packet routed from a source network to a destination network
@@ -132,11 +138,14 @@ public class Packet implements IPacket, Serializable {
 	 */
 	private Map<IRoutingRule,Long> getAttributeRulesScore(AttributeKey attributeKey, Collection<IRoutingRule> rules) {
 		if(attributeKey.equals(IRoutingRule.AttributeKey.srcAddresses)) {
-			return PacketHelper.getSrcAddressCloseAffinity(this, rules);
+			Map<IRoutingRule, String> srcAddressMap = rules.stream().collect(toMap(Function.identity(),
+					routingRule -> ((Collection<Attribute<String>>) routingRule.getSrcAddresses().getArgument()).stream().filter(srcAddress->Utility.isIpInsideNet(this.getSrcAddr(), srcAddress.getArgument())).findFirst().get().getArgument()));
+			return getIPAddressCloseAffinity(srcAddressMap);
 		} else if (attributeKey.equals(IRoutingRule.AttributeKey.dstAddress)) {
-			return PacketHelper.getIPAddressCloseAffinity(rules, attributeKey);
+			Map<IRoutingRule, String> rulesMap = rules.stream().collect(toMap(Function.identity(), rule -> (String) rule.getDstAddress().getArgument()));
+			return getIPAddressCloseAffinity(rulesMap);
 		}
-		return rules.stream().collect(Collectors.toMap(Function.identity(), routingRule -> routingRule.getMatchingScore(attributeKey, this)));
+		return rules.stream().collect(toMap(Function.identity(), routingRule -> routingRule.getMatchingScore(attributeKey, this)));
 	}
 
 
@@ -154,7 +163,32 @@ public class Packet implements IPacket, Serializable {
 				|| iRoutingRule.getMatchingScore(AttributeKey.dstPort,this)==0
 				|| iRoutingRule.getMatchingScore(AttributeKey.protocol,this)==0))
 				.collect(Collectors.toSet());
-
 	}
 
+
+
+	private static Map<IRoutingRule, Long> getIPAddressCloseAffinity(Map<IRoutingRule, String> rules) {
+		Map<IRoutingRule, Pair<Long, Integer>> iRoutingRulePairMap = rules.entrySet().stream().collect(toMap(Map.Entry::getKey, entry -> cidrStringToNetAndMask(entry.getValue())));
+		Optional<Map.Entry<IRoutingRule, Pair<Long, Integer>>> maxRuleEntryPair = iRoutingRulePairMap.entrySet().stream().max(Comparator.comparing(entry -> entry.getValue().getFirst()));
+		if (maxRuleEntryPair.isPresent()) {
+			Long ruleIP = maxRuleEntryPair.get().getValue().getFirst();
+			Map<IRoutingRule, Pair<Long, Integer>> rulesSubnet = iRoutingRulePairMap.entrySet().stream().filter(entry -> ruleIP.equals(entry.getValue().getFirst())).collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
+			if (rulesSubnet.size() == 1) {
+				return Collections.singletonMap(rulesSubnet.keySet().stream().findFirst().get(), ruleIP);
+			} else {
+				Optional<Map.Entry<IRoutingRule, Pair<Long, Integer>>> minRuleEntryPair = rulesSubnet.entrySet().stream().min(Comparator.comparing(entry -> entry.getValue().getSecond()));
+				if(minRuleEntryPair.isPresent()) {
+					Pair<Long, Integer> minMaskPair = minRuleEntryPair.get().getValue();
+					Map<IRoutingRule, Pair<Long, Integer>> rulesWithMask = rulesSubnet.entrySet().stream().filter(entry -> minMaskPair.getSecond().equals(entry.getValue().getSecond())).collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
+					if(rulesWithMask.size() == 1) {
+						return Collections.singletonMap(rulesWithMask.entrySet().stream().findFirst().get().getKey(), minMaskPair.getFirst());
+					} else {
+						IRoutingRule iRoutingRule = rulesWithMask.entrySet().stream().min(Comparator.comparing(entry -> (entry.getKey().getId()))).get().getKey();
+						return Collections.singletonMap(iRoutingRule, minMaskPair.getFirst());
+					}
+				}
+			}
+		}
+		return null;
+	}
 }
