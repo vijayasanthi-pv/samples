@@ -13,6 +13,8 @@ import java.util.stream.Collectors;
 import com.forescout.challenge.affinity.IPacket;
 import com.forescout.challenge.affinity.IRoutingRule;
 import com.forescout.challenge.affinity.IRoutingRule.AttributeKey;
+import com.forescout.challenge.affinity.Utility;
+import com.forescout.challenge.affinity.attributes.Attribute;
 
 /**
  * Represents a packet routed from a source network to a destination network
@@ -86,7 +88,7 @@ public class Packet implements IPacket, Serializable {
 	/**
 	 * Returns the {@link RoutingRule} with the highest matching score.
 	 * @param rules The pool of rules where the matching score is computed on
-	 * @param attributeIterator2 A ordered set of attributes representing the
+	 * @param attributePriorityIterator A ordered set of attributes representing the
 	 * priority order in which attributes are evaluated
 	 * @return
 	 */
@@ -115,7 +117,7 @@ public class Packet implements IPacket, Serializable {
 		if (attributePriorityIterator.hasNext()) 
 			rule = processRoutingRules(scoreMapSet,attributePriorityIterator);			
 		else 
-			rule = scoreMapSet.stream().min((rule1,rule2)->((Integer)rule1.getId()).compareTo((Integer)(rule2.getId()))).get();
+			rule = scoreMapSet.stream().min(Comparator.comparing(rule2 -> rule2.getId())).get();
 		
 		return rule;
 	}
@@ -125,14 +127,14 @@ public class Packet implements IPacket, Serializable {
 	 * Returns the {@Map <RoutingRule,Long} routing rules with their scores for a 
 	 * given attribute
 	 * @param rules The pool of rules where the matching score is computed on
-	 * @param attributesKey against which the routing rules are scored
+	 * @param attributeKey against which the routing rules are scored
 	 * @return
 	 */
 	private Map<IRoutingRule,Long> getAttributeRulesScore(AttributeKey attributeKey, Collection<IRoutingRule> rules) {
 		if(attributeKey.equals(IRoutingRule.AttributeKey.srcAddresses)) {
-			
-		}else if (attributeKey.equals(IRoutingRule.AttributeKey.dstAddress)) {
-			//return PacketHelper.getDstAddressCloseAffinity(this, rules);
+			return PacketHelper.getSrcAddressCloseAffinity(this, rules);
+		} else if (attributeKey.equals(IRoutingRule.AttributeKey.dstAddress)) {
+			return PacketHelper.getIPAddressCloseAffinity(rules, attributeKey);
 		}
 		return rules.stream().collect(Collectors.toMap(Function.identity(), routingRule -> routingRule.getMatchingScore(attributeKey, this)));
 	}
@@ -147,10 +149,10 @@ public class Packet implements IPacket, Serializable {
 	 */
 	private Collection<IRoutingRule> discardMismatchRules(Collection<IRoutingRule> rules) {
 
-		return rules.stream().filter(iRoutingRule->{return !(iRoutingRule.getMatchingScore(AttributeKey.dstAddress,this)==0
+		return rules.stream().filter(iRoutingRule-> !(iRoutingRule.getMatchingScore(AttributeKey.dstAddress,this)==0
 				|| iRoutingRule.getMatchingScore(AttributeKey.srcAddresses,this)==0
 				|| iRoutingRule.getMatchingScore(AttributeKey.dstPort,this)==0
-				|| iRoutingRule.getMatchingScore(AttributeKey.protocol,this)==0);})
+				|| iRoutingRule.getMatchingScore(AttributeKey.protocol,this)==0))
 				.collect(Collectors.toSet());
 
 	}
